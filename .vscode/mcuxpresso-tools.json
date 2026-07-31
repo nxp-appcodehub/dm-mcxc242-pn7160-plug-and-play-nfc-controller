@@ -1,0 +1,16 @@
+{
+  "version": "25.3",
+  "toolchainPath": "C:/NXP/MCUXpressoIDE_25.6.136/ide/tools",
+  "linkedProjects": [],
+  "trustZoneType": "none",
+  "multicoreType": "none",
+  "projectType": "cmake-freestanding",
+  "projectName": "dm-mcxc242-pn7160-plug-and-play-nfc-controller",
+  "sdk": {
+    "version": "26.6.0",
+    "path": "c:\\_DDM\\sdk_repo\\frdm_mcxc242",
+    "boardId": "frdmmcxc242",
+    "deviceId": "MCXC242",
+    "coreId": "core0"
+  }
+}

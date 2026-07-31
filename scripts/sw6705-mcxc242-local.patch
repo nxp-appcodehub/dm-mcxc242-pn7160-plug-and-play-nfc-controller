@@ -1,0 +1,1786 @@
+/*
+ * Copyright 2026 NXP
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+ 
+NFC Infrastructure Software License Notice
+
+This patch adapts NFC source files imported from NXP SW6705 for the MCXC242/PN7160 project.
+Apply this patch only after approving the NFC Infrastructure Software License and Distribution Agreement.
+The apply-sw6705-nfc.ps1 script enforces that approval before it downloads SW6705, copies NFC files, or applies this patch.
+
+diff --git b/NfcLibrary/NdefLibrary/src/P2P_NDEF.c a/NfcLibrary/NdefLibrary/src/P2P_NDEF.c
+index 40999b3..d6a4556 100644
+--- b/NfcLibrary/NdefLibrary/src/P2P_NDEF.c
++++ a/NfcLibrary/NdefLibrary/src/P2P_NDEF.c
+@@ -113,6 +113,7 @@ static unsigned int gP2P_NDEF_ptr;
+ static unsigned char gP2P_NDEF_curNR;
+ static unsigned char gP2P_NDEF_curNS;
+ 
++/* Usage: Decode an LLCP header and parameters from an inbound peer-to-peer PDU. */
+ static void ParseLlcp(unsigned char *pBuf, unsigned short BufSize, P2P_NDEF_LlcpHeader_t *pLlcpHeader)
+ {
+     pLlcpHeader->Dsap = pBuf[0] >> 2;
+@@ -164,12 +165,14 @@ static void ParseLlcp(unsigned char *pBuf, unsigned short BufSize, P2P_NDEF_Llcp
+     }
+ }
+ 
++/* Usage: Encode LLCP header fields into the outgoing PDU buffer. */
+ static void FillLlcp(P2P_NDEF_LlcpHeader_t LlcpHeader, unsigned char *pBuf)
+ {
+     pBuf[0] = (LlcpHeader.Ssap << 2) + ((LlcpHeader.Pdu >> 2) & 3);
+     pBuf[1] = (LlcpHeader.Pdu << 6) + LlcpHeader.Dsap;
+ }
+ 
++/* Usage: Register the NDEF payload to push to a peer and optional completion callback. */
+ bool P2P_NDEF_SetMessage(unsigned char *pMessage, unsigned int Message_size, void *pCb)
+ {
+     if (pMessage != NULL)
+@@ -192,11 +195,18 @@ bool P2P_NDEF_SetMessage(unsigned char *pMessage, unsigned int Message_size, voi
+     }
+ }
+ 
++/* Usage: Register the callback invoked when a peer pushes an NDEF message. */
+ void P2P_NDEF_RegisterPullCallback(void *pCb)
+ {
+     pP2P_NDEF_PullCb = (P2P_NDEF_PullCallback_t*) pCb;
+ }
+ 
++/*
++ * P2P_NDEF_Reset
++ * Usage: Reset the SNEP client state machine before a new peer-to-peer session.
++ * If a message has been set it enters the Initial state ready to push, otherwise
++ * it stays Idle.
++ */
+ void P2P_NDEF_Reset(void)
+ {
+     gP2P_DEF_fragmentation = 0;
+@@ -211,10 +221,17 @@ void P2P_NDEF_Reset(void)
+     }
+ }
+ 
++/*
++ * P2P_NDEF_Next
++ * Usage: Drive the LLCP/SNEP peer-to-peer exchange one step at a time. Parses the
++ * inbound PDU (pCmd) and builds the outbound PDU (pRsp), handling connect,
++ * information (I), receiver-ready (RR) and SYMM frames to push and/or pull an NDEF
++ * message. A returned response size of 0 means no answer is sent this step.
++ */
+ void P2P_NDEF_Next(unsigned char *pCmd, unsigned short Cmd_size, unsigned char *pRsp, unsigned short *pRsp_size)
+ {
+     P2P_NDEF_LlcpHeader_t LlcpHeader;
+-    
++
+     /* Initialize with no answer by default */
+     *pRsp_size = 0;
+ 
+diff --git b/NfcLibrary/NdefLibrary/src/RW_NDEF.c a/NfcLibrary/NdefLibrary/src/RW_NDEF.c
+index 99a5bd2..e0dbbaa 100644
+--- b/NfcLibrary/NdefLibrary/src/RW_NDEF.c
++++ a/NfcLibrary/NdefLibrary/src/RW_NDEF.c
+@@ -38,6 +38,12 @@ RW_NDEF_PushCallback_t *pRW_NDEF_PushCb;
+ static RW_NDEF_Fct_t *pReadFct = NULL;
+ static RW_NDEF_Fct_t *pWriteFct = NULL;
+ 
++/*
++ * RW_NDEF_SetMessage
++ * Usage: Register the NDEF message buffer to be written to a tag and the optional
++ * push completion callback. Returns true if the message fits in the reserved
++ * buffer (RW_MAX_NDEF_FILE_SIZE), false otherwise.
++ */
+ bool RW_NDEF_SetMessage(unsigned char *pMessage, unsigned short Message_size, void *pCb)
+ {
+     if (Message_size <= RW_MAX_NDEF_FILE_SIZE)
+@@ -55,11 +61,22 @@ bool RW_NDEF_SetMessage(unsigned char *pMessage, unsigned short Message_size, vo
+     }
+ }
+ 
++/*
++ * RW_NDEF_RegisterPullCallback
++ * Usage: Register the application callback that is invoked when an NDEF message
++ * has been read from a tag.
++ */
+ void RW_NDEF_RegisterPullCallback(void *pCb)
+ {
+     pRW_NDEF_PullCb = (RW_NDEF_PullCallback_t *) pCb;
+ }
+ 
++/*
++ * RW_NDEF_Reset
++ * Usage: Initialise the reader/writer NDEF state machine for the given tag type
++ * and bind the matching per-technology Read/Write handlers (T1T, T2T, T3T, T4T,
++ * T5T or MIFARE). Call before starting a read or write sequence.
++ */
+ void RW_NDEF_Reset(unsigned char type)
+ {
+     pReadFct = NULL;
+@@ -100,11 +117,23 @@ void RW_NDEF_Reset(unsigned char type)
+     }
+ }
+ 
++/*
++ * RW_NDEF_Read_Next
++ * Usage: Process the previous tag response and build the next read command by
++ * delegating to the technology specific read handler selected in RW_NDEF_Reset.
++ * A returned response size of 0 indicates the read sequence is complete.
++ */
+ void RW_NDEF_Read_Next(unsigned char *pCmd, unsigned short Cmd_size, unsigned char *Rsp, unsigned short *pRsp_size)
+ {
+     if (pReadFct != NULL) pReadFct(pCmd, Cmd_size, Rsp, pRsp_size);
+ }
+ 
++/*
++ * RW_NDEF_Write_Next
++ * Usage: Process the previous tag response and build the next write command by
++ * delegating to the technology specific write handler selected in RW_NDEF_Reset.
++ * A returned command size of 0 indicates the write sequence is complete.
++ */
+ void RW_NDEF_Write_Next(unsigned char *pCmd, unsigned short Cmd_size, unsigned char *Rsp, unsigned short *pRsp_size)
+ {
+     if (pWriteFct != NULL) pWriteFct(pCmd, Cmd_size, Rsp, pRsp_size);
+diff --git b/NfcLibrary/NdefLibrary/src/RW_NDEF_MIFARE.c a/NfcLibrary/NdefLibrary/src/RW_NDEF_MIFARE.c
+index 6c4ce2e..eeb3932 100644
+--- b/NfcLibrary/NdefLibrary/src/RW_NDEF_MIFARE.c
++++ a/NfcLibrary/NdefLibrary/src/RW_NDEF_MIFARE.c
+@@ -52,12 +52,24 @@ typedef struct
+ static RW_NDEF_MIFARE_state_t eRW_NDEF_MIFARE_State = Initial;
+ static RW_NDEF_MIFARE_Ndef_t RW_NDEF_MIFARE_Ndef;
+ 
++/*
++ * RW_NDEF_MIFARE_Reset
++ * Usage: Reset the MIFARE Classic NDEF state machine and point the working buffer
++ * to the shared NdefBuffer. Call before starting a MIFARE read or write sequence.
++ */
+ void RW_NDEF_MIFARE_Reset(void)
+ {
+     eRW_NDEF_MIFARE_State = Initial;
+     RW_NDEF_MIFARE_Ndef.pMessage = NdefBuffer;
+ }
+ 
++/*
++ * RW_NDEF_MIFARE_Read_Next
++ * Usage: Advance the MIFARE Classic NDEF read state machine. Given the previous
++ * tag response (pRsp), it builds the next command (pCmd) to authenticate sectors,
++ * read the MAD/GPB and stream NDEF data blocks. A returned command size of 0 means
++ * the read is complete; the received NDEF is delivered through pRW_NDEF_PullCb.
++ */
+ void RW_NDEF_MIFARE_Read_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigned char *pCmd, unsigned short *pCmd_size)
+ {
+     /* By default no further command to be sent */
+@@ -218,6 +230,13 @@ void RW_NDEF_MIFARE_Read_Next(unsigned char *pRsp, unsigned short Rsp_size, unsi
+     }
+ }
+ 
++/*
++ * RW_NDEF_MIFARE_Write_Next
++ * Usage: Advance the MIFARE Classic NDEF write state machine. Given the previous
++ * tag response (pRsp), it builds the next command (pCmd) to authenticate sectors
++ * and write the NDEF message registered via RW_NDEF_SetMessage. A returned command
++ * size of 0 means the write is complete; completion is signalled via pRW_NDEF_PushCb.
++ */
+ void RW_NDEF_MIFARE_Write_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigned char *pCmd, unsigned short *pCmd_size)
+ {
+     /* By default no further command to be sent */
+diff --git b/NfcLibrary/NdefLibrary/src/RW_NDEF_T1T.c a/NfcLibrary/NdefLibrary/src/RW_NDEF_T1T.c
+index 20c44cc..45eaea2 100644
+--- b/NfcLibrary/NdefLibrary/src/RW_NDEF_T1T.c
++++ a/NfcLibrary/NdefLibrary/src/RW_NDEF_T1T.c
+@@ -47,12 +47,24 @@ typedef struct
+ static RW_NDEF_T1T_state_t eRW_NDEF_T1T_State = Initial;
+ static RW_NDEF_T1T_Ndef_t RW_NDEF_T1T_Ndef;
+ 
++/*
++ * RW_NDEF_T1T_Reset
++ * Usage: Reset the Type 1 Tag (T1T) NDEF read state machine and point the working
++ * buffer to the shared NdefBuffer. Call before starting a T1T read sequence.
++ */
+ void RW_NDEF_T1T_Reset(void)
+ {
+     eRW_NDEF_T1T_State = Initial;
+     RW_NDEF_T1T_Ndef.pMessage = NdefBuffer;
+ }
+ 
++/*
++ * RW_NDEF_T1T_Read_Next
++ * Usage: Advance the Type 1 Tag NDEF read state machine. Given the previous tag
++ * response (pRsp), it builds the next command (pCmd) to read the tag ID, the full
++ * card content and any further NDEF blocks. A returned command size of 0 means the
++ * read is complete; the received NDEF is delivered through pRW_NDEF_PullCb.
++ */
+ void RW_NDEF_T1T_Read_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigned char *pCmd, unsigned short *pCmd_size)
+ {
+     /* By default no further command to be sent */
+diff --git b/NfcLibrary/NdefLibrary/src/RW_NDEF_T2T.c a/NfcLibrary/NdefLibrary/src/RW_NDEF_T2T.c
+index 84dfc0d..06feb98 100644
+--- b/NfcLibrary/NdefLibrary/src/RW_NDEF_T2T.c
++++ a/NfcLibrary/NdefLibrary/src/RW_NDEF_T2T.c
+@@ -43,12 +43,27 @@ typedef struct
+ static RW_NDEF_T2T_state_t eRW_NDEF_T2T_State = Initial;
+ static RW_NDEF_T2T_Ndef_t RW_NDEF_T2T_Ndef;
+ 
++/*
++ * RW_NDEF_T2T_Reset
++ * Usage: Reset the Type 2 Tag read/write state machine back to its initial
++ * state and point the working NDEF buffer to the shared NdefBuffer. Call this
++ * once before starting a new T2T read or write sequence.
++ */
+ void RW_NDEF_T2T_Reset(void)
+ {
+     eRW_NDEF_T2T_State = Initial;
+     RW_NDEF_T2T_Ndef.pMessage = NdefBuffer;
+ }
+ 
++/*
++ * RW_NDEF_T2T_Read_Next
++ * Usage: State-machine step for reading an NDEF message from a Type 2 Tag.
++ * Interprets the previous tag response (pRsp/Rsp_size) and produces the next
++ * command to send (pCmd/pCmd_size). It reads the Capability Container, locates
++ * the NDEF TLV, then reads data blocks until the whole message is collected.
++ * Sets *pCmd_size to 0 when no further command is required (read finished or
++ * error). On completion the received NDEF is delivered via pRW_NDEF_PullCb.
++ */
+ void RW_NDEF_T2T_Read_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigned char *pCmd, unsigned short *pCmd_size)
+ {
+     /* By default no further command to be sent */
+@@ -157,6 +172,15 @@ void RW_NDEF_T2T_Read_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigne
+     }
+ }
+ 
++/*
++ * RW_NDEF_T2T_Write_Next
++ * Usage: State-machine step for writing an NDEF message to a Type 2 Tag.
++ * Interprets the previous tag response (pRsp/Rsp_size) and produces the next
++ * command to send (pCmd/pCmd_size). It reads the Capability Container to check
++ * NDEF and read/write access and capacity, then writes the NDEF TLV and data
++ * blocks. Sets *pCmd_size to 0 when no further command is required (write
++ * finished or error). On completion pRW_NDEF_PushCb is invoked.
++ */
+ void RW_NDEF_T2T_Write_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigned char *pCmd, unsigned short *pCmd_size)
+ {
+     /* By default no further command to be sent */
+diff --git b/NfcLibrary/NdefLibrary/src/RW_NDEF_T3T.c a/NfcLibrary/NdefLibrary/src/RW_NDEF_T3T.c
+index 90192f0..e31aa03 100644
+--- b/NfcLibrary/NdefLibrary/src/RW_NDEF_T3T.c
++++ a/NfcLibrary/NdefLibrary/src/RW_NDEF_T3T.c
+@@ -42,18 +42,39 @@ typedef struct
+ static RW_NDEF_T3T_state_t eRW_NDEF_T3T_State = Initial;
+ static RW_NDEF_T3T_Ndef_t RW_NDEF_T3T_Ndef;
+ 
++/*
++ * RW_NDEF_T3T_Reset
++ * Usage: Reset the Type 3 Tag read state machine back to its initial state and
++ * point the working NDEF buffer to the shared NdefBuffer. Call this once before
++ * starting a new T3T read sequence.
++ */
+ void RW_NDEF_T3T_Reset(void)
+ {
+     eRW_NDEF_T3T_State = Initial;
+     RW_NDEF_T3T_Ndef.p = NdefBuffer;
+ }
+ 
++/*
++ * RW_NDEF_T3T_SetIDm
++ * Usage: Store the target's IDm (8-byte manufacture identifier) and patch it
++ * into the T3T CHECK command template so subsequent reads address the detected
++ * tag. Call this after tag activation, before starting a T3T read.
++ */
+ void RW_NDEF_T3T_SetIDm(unsigned char *pIDm)
+ {
+     memcpy(RW_NDEF_T3T_Ndef.IDm, pIDm, sizeof(RW_NDEF_T3T_Ndef.IDm));
+     memcpy(&T3T_Check[2], pIDm, sizeof(RW_NDEF_T3T_Ndef.IDm));
+ }
+ 
++/*
++ * RW_NDEF_T3T_Read_Next
++ * Usage: State-machine step for reading an NDEF message from a Type 3 Tag.
++ * Interprets the previous tag response (pRsp/Rsp_size) and produces the next
++ * command to send (pCmd/pCmd_size). It gets the Attribute Information block to
++ * learn the NDEF size, then reads card content blocks until the whole message
++ * is collected. Sets *pCmd_size to 0 when no further command is required (read
++ * finished or error). On completion the NDEF is delivered via pRW_NDEF_PullCb.
++ */
+ void RW_NDEF_T3T_Read_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigned char *pCmd, unsigned short *pCmd_size)
+ {
+     /* By default no further command to be sent */
+diff --git b/NfcLibrary/NdefLibrary/src/RW_NDEF_T4T.c a/NfcLibrary/NdefLibrary/src/RW_NDEF_T4T.c
+index 4fd06f5..80c5307 100644
+--- b/NfcLibrary/NdefLibrary/src/RW_NDEF_T4T.c
++++ a/NfcLibrary/NdefLibrary/src/RW_NDEF_T4T.c
+@@ -61,12 +61,28 @@ typedef struct
+ static RW_NDEF_T4T_state_t eRW_NDEF_T4T_State = Initial;
+ static RW_NDEF_T4T_Ndef_t RW_NDEF_T4T_Ndef;
+ 
++/*
++ * RW_NDEF_T4T_Reset
++ * Usage: Reset the Type 4 Tag read/write state machine back to its initial
++ * state and point the working NDEF buffer to the shared NdefBuffer. Call this
++ * once before starting a new T4T read or write sequence.
++ */
+ void RW_NDEF_T4T_Reset(void)
+ {
+     eRW_NDEF_T4T_State = Initial;
+     RW_NDEF_T4T_Ndef.pMessage = NdefBuffer;
+ }
+ 
++/*
++ * RW_NDEF_T4T_Read_Next
++ * Usage: State-machine step for reading an NDEF message from a Type 4 Tag.
++ * Interprets the previous tag response (pRsp/Rsp_size) and produces the next
++ * command to send (pCmd/pCmd_size). It selects the NDEF application (v2.0 then
++ * v1.0), selects and reads the Capability Container, selects the NDEF file,
++ * reads the NDEF length and then the NDEF data (handling MLe segmentation).
++ * Sets *pCmd_size to 0 when no further command is required (read finished or
++ * error). On completion the NDEF is delivered via pRW_NDEF_PullCb.
++ */
+ void RW_NDEF_T4T_Read_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigned char *pCmd, unsigned short *pCmd_size)
+ {
+     /* By default no further command to be sent */
+@@ -211,6 +227,16 @@ void RW_NDEF_T4T_Read_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigne
+     }
+ }
+ 
++/*
++ * RW_NDEF_T4T_Write_Next
++ * Usage: State-machine step for writing an NDEF message to a Type 4 Tag.
++ * Interprets the previous tag response (pRsp/Rsp_size) and produces the next
++ * command to send (pCmd/pCmd_size). It selects the NDEF application and file,
++ * clears the NDEF length, writes the NDEF data in WRITE_SZ chunks and finally
++ * writes the NDEF length to validate the message. Sets *pCmd_size to 0 when no
++ * further command is required (write finished or error). On completion
++ * pRW_NDEF_PushCb is invoked.
++ */
+ void RW_NDEF_T4T_Write_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigned char *pCmd, unsigned short *pCmd_size)
+ {
+     /* By default no further command to be sent */
+diff --git b/NfcLibrary/NdefLibrary/src/RW_NDEF_T5T.c a/NfcLibrary/NdefLibrary/src/RW_NDEF_T5T.c
+index d3d6a32..2710db1 100644
+--- b/NfcLibrary/NdefLibrary/src/RW_NDEF_T5T.c
++++ a/NfcLibrary/NdefLibrary/src/RW_NDEF_T5T.c
+@@ -43,6 +43,12 @@ typedef struct
+ static RW_NDEF_T5T_state_t eRW_NDEF_T5T_State = Initial;
+ static RW_NDEF_T5T_Ndef_t RW_NDEF_T5T_Ndef;
+ 
++/*
++ * T5T_prepare_read_block
++ * Usage: Build a Type 5 Tag (ISO 15693) READ SINGLE BLOCK command for the given
++ * block number into pCmd, using the currently detected addressing mode (1-byte
++ * or 2-byte). Returns the number of bytes written into pCmd.
++ */
+ static unsigned short T5T_prepare_read_block(unsigned char blk, unsigned char *pCmd)
+ {
+ 	unsigned short size;
+@@ -65,6 +71,13 @@ static unsigned short T5T_prepare_read_block(unsigned char blk, unsigned char *p
+ 	return size;
+ }
+ 
++/*
++ * T5T_prepare_write_block
++ * Usage: Build a Type 5 Tag (ISO 15693) WRITE SINGLE BLOCK command for the given
++ * block number into pCmd, copying the 4 data bytes from pData, using the
++ * currently detected addressing mode (1-byte or 2-byte). Returns the number of
++ * bytes written into pCmd.
++ */
+ static unsigned short T5T_prepare_write_block(unsigned char blk, unsigned char *pCmd, unsigned char *pData)
+ {
+ 	unsigned short size;
+@@ -89,12 +102,27 @@ static unsigned short T5T_prepare_write_block(unsigned char blk, unsigned char *
+ 	return size;
+ }
+ 
++/*
++ * RW_NDEF_T5T_Reset
++ * Usage: Reset the Type 5 Tag read/write state machine back to its initial
++ * state and point the working NDEF buffer to the shared NdefBuffer. Call this
++ * once before starting a new T5T read or write sequence.
++ */
+ void RW_NDEF_T5T_Reset(void)
+ {
+     eRW_NDEF_T5T_State = Initial;
+     RW_NDEF_T5T_Ndef.pMessage = NdefBuffer;
+ }
+ 
++/*
++ * RW_NDEF_T5T_Read_Next
++ * Usage: State-machine step for reading an NDEF message from a Type 5 Tag.
++ * Interprets the previous tag response (pRsp/Rsp_size) and produces the next
++ * command to send (pCmd/pCmd_size). It reads the Capability Container to learn
++ * the addressing mode, locates the NDEF TLV and reads data blocks until the
++ * whole message is collected. Sets *pCmd_size to 0 when no further command is
++ * required (read finished or error). On completion pRW_NDEF_PullCb is invoked.
++ */
+ void RW_NDEF_T5T_Read_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigned char *pCmd, unsigned short *pCmd_size)
+ {
+     /* By default no further command to be sent */
+@@ -186,6 +214,15 @@ void RW_NDEF_T5T_Read_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigne
+     }
+ }
+ 
++/*
++ * RW_NDEF_T5T_Write_Next
++ * Usage: State-machine step for writing an NDEF message to a Type 5 Tag.
++ * Interprets the previous tag response (pRsp/Rsp_size) and produces the next
++ * command to send (pCmd/pCmd_size). It reads the Capability Container to learn
++ * the addressing mode and capacity, then writes the NDEF TLV and data blocks.
++ * Sets *pCmd_size to 0 when no further command is required (write finished or
++ * error). On completion pRW_NDEF_PushCb is invoked.
++ */
+ void RW_NDEF_T5T_Write_Next(unsigned char *pRsp, unsigned short Rsp_size, unsigned char *pCmd, unsigned short *pCmd_size)
+ {
+     /* By default no further command to be sent */
+diff --git b/NfcLibrary/NdefLibrary/src/T4T_NDEF_emu.c a/NfcLibrary/NdefLibrary/src/T4T_NDEF_emu.c
+index 85053e2..06c0a9a 100644
+--- b/NfcLibrary/NdefLibrary/src/T4T_NDEF_emu.c
++++ a/NfcLibrary/NdefLibrary/src/T4T_NDEF_emu.c
+@@ -47,6 +47,14 @@ static T4T_NDEF_EMU_state_t eT4T_NDEF_EMU_State = Ready;
+ 
+ static T4T_NDEF_EMU_Callback_t *pT4T_NDEF_EMU_PushCb = NULL;
+ 
++/*
++ * T4T_NDEF_EMU_FillRsp
++ * Usage: Build the READ BINARY response payload for the emulated NDEF file.
++ * Copies the requested length of bytes starting at offset into pRsp, where
++ * offsets 0 and 1 return the 2-byte NDEF length prefix. When the end of the
++ * NDEF message is reached, the registered push callback is invoked to notify
++ * the application that the NDEF message has been sent.
++ */
+ static void T4T_NDEF_EMU_FillRsp (unsigned char *pRsp, unsigned short offset, unsigned char length)
+ {
+     if (offset == 0)
+@@ -73,6 +81,13 @@ static void T4T_NDEF_EMU_FillRsp (unsigned char *pRsp, unsigned short offset, un
+     }
+ }
+ 
++/*
++ * T4T_NDEF_EMU_SetMessage
++ * Usage: Provide the NDEF message to be exposed by the Type 4 Tag emulation and
++ * register an optional callback invoked once the message has been fully read by
++ * the remote reader. pMessage/Message_size describe the NDEF payload; pCb is the
++ * completion callback (may be NULL). Returns true on success.
++ */
+ bool T4T_NDEF_EMU_SetMessage(unsigned char *pMessage, unsigned short Message_size, void *pCb)
+ {
+     pT4T_NdefMessage = pMessage;
+@@ -82,11 +97,25 @@ bool T4T_NDEF_EMU_SetMessage(unsigned char *pMessage, unsigned short Message_siz
+     return true;
+ }
+ 
++/*
++ * T4T_NDEF_EMU_Reset
++ * Usage: Reset the Type 4 Tag emulation state machine back to the Ready state.
++ * Call this before starting a new card emulation session.
++ */
+ void T4T_NDEF_EMU_Reset(void)
+ {
+     eT4T_NDEF_EMU_State = Ready;
+ }
+ 
++/*
++ * T4T_NDEF_EMU_Next
++ * Usage: Process one C-APDU received from the remote reader during Type 4 Tag
++ * emulation and build the matching R-APDU. pCmd/Cmd_size is the incoming
++ * command; the response is written to pRsp with its length in *pRsp_size. It
++ * handles NDEF application select, CC select and read, NDEF select, read and
++ * write, appending the OK status word on success or the NOK status word (and
++ * resetting the state machine) on failure.
++ */
+ void T4T_NDEF_EMU_Next(unsigned char *pCmd, unsigned short Cmd_size, unsigned char *pRsp, unsigned short *pRsp_size)
+ {
+     bool eStatus = false;
+diff --git b/NfcLibrary/NxpNci20/src/NxpNci20.c a/NfcLibrary/NxpNci20/src/NxpNci20.c
+index 1d9bd97..ff15643 100644
+--- b/NfcLibrary/NxpNci20/src/NxpNci20.c
++++ a/NfcLibrary/NxpNci20/src/NxpNci20.c
+@@ -26,6 +26,14 @@ static uint8_t gNextTag_Protocol = PROT_UNDETERMINED;
+ static uint8_t NCIStartDiscovery[30];
+ static uint8_t NCIStartDiscovery_length = 0;
+ 
++/*
++ * NxpNci_CheckDevPres
++ * Usage: Check the presence and readiness of the NFC Controller by sending a
++ * CORE_RESET command and validating the response. Also catches the follow-up
++ * notification to detect the anti-tearing recovery case (RF settings restored)
++ * and to capture the controller firmware version. Returns NXPNCI_SUCCESS if the
++ * device responded correctly, NXPNCI_ERROR otherwise.
++ */
+ static bool NxpNci_CheckDevPres(void)
+ {
+     uint8_t NCICoreReset[] = {0x20, 0x00, 0x01, 0x01};
+@@ -69,6 +77,12 @@ static bool NxpNci_CheckDevPres(void)
+     return NXPNCI_SUCCESS;
+ }
+ 
++/*
++ * NxpNci_WaitForReception
++ * Usage: Wait (up to timeout) for a frame from the NFC Controller into pRBuff.
++ * Returns the number of bytes read via pBytesread. Returns NXPNCI_SUCCESS when
++ * at least one byte was received, NXPNCI_ERROR on timeout with no data.
++ */
+ static bool NxpNci_WaitForReception(uint8_t *pRBuff, uint16_t RBuffSize, uint16_t *pBytesread, uint16_t timeout)
+ {
+     tml_Receive(pRBuff, RBuffSize, pBytesread, timeout);
+@@ -78,6 +92,13 @@ static bool NxpNci_WaitForReception(uint8_t *pRBuff, uint16_t RBuffSize, uint16_
+     return NXPNCI_SUCCESS;
+ }
+ 
++/*
++ * NxpNci_HostTransceive
++ * Usage: Send a command frame (pTBuff/TbuffLen) to the NFC Controller and wait
++ * for its response into pRBuff, returning the response length via pBytesread.
++ * This is the basic request/response helper used by most NCI operations.
++ * Returns NXPNCI_SUCCESS on success, NXPNCI_ERROR on send/receive failure.
++ */
+ static bool NxpNci_HostTransceive(uint8_t *pTBuff, uint16_t TbuffLen, uint8_t *pRBuff, uint16_t RBuffSize, uint16_t *pBytesread)
+ {
+     tml_Send(pTBuff, TbuffLen, pBytesread);
+@@ -90,6 +111,12 @@ static bool NxpNci_HostTransceive(uint8_t *pTBuff, uint16_t TbuffLen, uint8_t *p
+     return NXPNCI_SUCCESS;
+ }
+ 
++/*
++ * NxpNci_FillInterfaceInfo
++ * Usage: Parse the technology-specific parameters from an activation/discovery
++ * notification payload (pBuf) and populate the pRfIntf->Info union according to
++ * the detected mode and technology (NFC-A, NFC-B, NFC-F or ISO 15693/NFC-V).
++ */
+ static void NxpNci_FillInterfaceInfo(NxpNci_RfIntf_t* pRfIntf, uint8_t* pBuf)
+ {
+     uint8_t i, temp;
+@@ -153,6 +180,14 @@ static void NxpNci_FillInterfaceInfo(NxpNci_RfIntf_t* pRfIntf, uint8_t* pBuf)
+ }
+ 
+ #ifndef REMOVE_CARDEMU_SUPPORT
++/*
++ * NxpNci_ProcessCardMode
++ * Usage: Run the card emulation loop for an active listen-mode session. It
++ * handles incoming DATA_PACKETs by forwarding them to the T4T NDEF emulation
++ * handler and sending back the generated responses, and manages the discovery
++ * restart on RF_DEACTIVATE_NTF. Returns when the session ends and control
++ * should return to the discovery state.
++ */
+ void NxpNci_ProcessCardMode(NxpNci_RfIntf_t RfIntf)
+ {
+     uint8_t Answer[MAX_NCI_FRAME_SIZE];
+@@ -201,6 +236,13 @@ void NxpNci_ProcessCardMode(NxpNci_RfIntf_t RfIntf)
+     }
+ }
+ 
++/*
++ * NxpNci_CardModeReceive
++ * Usage: Wait for and receive a single data packet from the remote reader while
++ * in card emulation mode. The payload is copied to pData and its length to
++ * *pDataSize. Returns NXPNCI_SUCCESS if a data packet was received, otherwise
++ * NXPNCI_ERROR.
++ */
+ bool NxpNci_CardModeReceive (unsigned char *pData, unsigned char *pDataSize)
+ {
+     bool status = NXPNCI_ERROR;
+@@ -220,6 +262,12 @@ bool NxpNci_CardModeReceive (unsigned char *pData, unsigned char *pDataSize)
+     return status;
+ }
+ 
++/*
++ * NxpNci_CardModeSend
++ * Usage: Send a data packet (pData/DataSize) to the remote reader while in card
++ * emulation mode by wrapping it in an NCI DATA_PACKET. Returns NXPNCI_SUCCESS
++ * on success, NXPNCI_ERROR otherwise.
++ */
+ bool NxpNci_CardModeSend (unsigned char *pData, unsigned char DataSize)
+ {
+     bool status;
+@@ -240,6 +288,14 @@ bool NxpNci_CardModeSend (unsigned char *pData, unsigned char DataSize)
+ #endif //#ifndef REMOVE_CARDEMU_SUPPORT
+ 
+ #ifndef REMOVE_P2P_SUPPORT
++/*
++ * NxpNci_ProcessP2pMode
++ * Usage: Run the peer-to-peer (LLCP/SNEP) communication loop for an active P2P
++ * session. In Initiator mode it starts the SYMM exchange; it then forwards
++ * incoming DATA_PACKETs to the P2P NDEF handler and sends the generated
++ * responses, handling deactivation, interface error and discovery notifications
++ * and restarting discovery when required. Returns when the session ends.
++ */
+ void NxpNci_ProcessP2pMode(NxpNci_RfIntf_t RfIntf)
+ {
+     uint8_t Answer[MAX_NCI_FRAME_SIZE];
+@@ -322,6 +378,14 @@ void NxpNci_ProcessP2pMode(NxpNci_RfIntf_t RfIntf)
+ #endif //ifndef REMOVE_P2P_SUPPORT
+ 
+ #ifndef REMOVE_RW_SUPPORT
++/*
++ * NxpNci_ReaderTagCmd
++ * Usage: Exchange a raw tag command with the currently activated tag in reader
++ * mode. The command (pCommand/CommandSize) is wrapped in an NCI DATA_PACKET and
++ * the tag answer is returned in pAnswer with its length in *pAnswerSize.
++ * Returns NXPNCI_SUCCESS if a valid data response was received, NXPNCI_ERROR
++ * otherwise.
++ */
+ bool NxpNci_ReaderTagCmd (unsigned char *pCommand, unsigned char CommandSize, unsigned char *pAnswer, unsigned char *pAnswerSize)
+ {
+     bool status = NXPNCI_ERROR;
+@@ -351,6 +415,14 @@ bool NxpNci_ReaderTagCmd (unsigned char *pCommand, unsigned char CommandSize, un
+ }
+ 
+ #ifndef REMOVE_NDEF_SUPPORT
++/*
++ * NxpNci_ReadNdef
++ * Usage: Read the NDEF message from the activated tag by driving the RW_NDEF
++ * read state machine: it repeatedly gets the next command to send, transceives
++ * it to the tag, and feeds the response back until the read completes. Handles
++ * ISO-DEP (T4T) frame chaining by concatenating chained frames into a single
++ * answer.
++ */
+ static void NxpNci_ReadNdef(NxpNci_RfIntf_t RfIntf)
+ {
+     uint8_t Answer[MAX_NCI_FRAME_SIZE];
+@@ -399,6 +471,12 @@ static void NxpNci_ReadNdef(NxpNci_RfIntf_t RfIntf)
+     }
+ }
+ 
++/*
++ * NxpNci_WriteNdef
++ * Usage: Write the NDEF message to the activated tag by driving the RW_NDEF
++ * write state machine: it repeatedly gets the next command to send, transceives
++ * it to the tag, and feeds the response back until the write completes.
++ */
+ static void NxpNci_WriteNdef(NxpNci_RfIntf_t RfIntf)
+ {
+     uint8_t Answer[MAX_NCI_FRAME_SIZE];
+@@ -430,6 +508,13 @@ static void NxpNci_WriteNdef(NxpNci_RfIntf_t RfIntf)
+ }
+ #endif //#ifndef REMOVE_NDEF_SUPPORT
+ 
++/*
++ * NxpNci_PresenceCheck
++ * Usage: Periodically poll the activated tag to detect when it leaves the RF
++ * field, using the presence-check procedure appropriate to the tag protocol
++ * (T1T, T2T, T3T, ISO-DEP, T5T or MIFARE). Returns once the tag is no longer
++ * present.
++ */
+ static void NxpNci_PresenceCheck(NxpNci_RfIntf_t RfIntf)
+ {
+     bool status;
+@@ -511,6 +596,12 @@ static void NxpNci_PresenceCheck(NxpNci_RfIntf_t RfIntf)
+     }
+ }
+ 
++/*
++ * NxpNci_ProcessReaderMode
++ * Usage: Perform the requested reader-mode operation on the activated tag. For
++ * T3T it first programs the IDm. Depending on Operation it reads NDEF, writes
++ * NDEF, or runs the presence check loop.
++ */
+ void NxpNci_ProcessReaderMode(NxpNci_RfIntf_t RfIntf, NxpNci_RW_Operation_t Operation)
+ {
+ #ifndef REMOVE_NDEF_SUPPORT
+@@ -538,6 +629,13 @@ void NxpNci_ProcessReaderMode(NxpNci_RfIntf_t RfIntf, NxpNci_RW_Operation_t Oper
+     }
+ }
+ 
++/*
++ * NxpNci_ReaderActivateNext
++ * Usage: When multiple tags are present, disconnect the current tag and select
++ * and activate the next detected tag. On success pRfIntf is updated with the
++ * new interface, protocol, mode/tech and parsed info. Returns NXPNCI_SUCCESS if
++ * a next tag was activated, NXPNCI_ERROR otherwise.
++ */
+ bool NxpNci_ReaderActivateNext(NxpNci_RfIntf_t *pRfIntf)
+ {
+     uint8_t NCIStopDiscovery[] = {0x21, 0x06, 0x01, 0x01};
+@@ -583,6 +681,13 @@ bool NxpNci_ReaderActivateNext(NxpNci_RfIntf_t *pRfIntf)
+     return status;
+ }
+ 
++/*
++ * NxpNci_ReaderReActivate
++ * Usage: De-activate and then re-activate the currently selected target using
++ * its stored protocol and interface. Useful to restart a clean session with the
++ * same tag. Returns NXPNCI_SUCCESS if re-activation succeeded, NXPNCI_ERROR
++ * otherwise.
++ */
+ bool NxpNci_ReaderReActivate(NxpNci_RfIntf_t *pRfIntf)
+ {
+     uint8_t NCIDeactivate[] = {0x21, 0x06, 0x01, 0x01};
+@@ -604,29 +709,46 @@ bool NxpNci_ReaderReActivate(NxpNci_RfIntf_t *pRfIntf)
+ }
+ #endif //#ifndef REMOVE_RW_SUPPORT
+ 
++/*
++ * NxpNci_Connect
++ * Usage: Open the transport connection to the NFC Controller and bring it to an
++ * initialized NCI 2.0 state. It performs up to three attempts, each forcing a
++ * hardware reset, checking device presence and sending CORE_INIT. Returns
++ * NXPNCI_SUCCESS once the controller is connected and initialized, NXPNCI_ERROR
++ * if all attempts fail.
++ */
+ bool NxpNci_Connect(void)
+ {
+-    uint8_t i = 2;
++    uint8_t i;
+     uint8_t NCICoreInit_2_0[] = {0x20, 0x01, 0x02, 0x00, 0x00};
+     uint8_t Answer[MAX_NCI_FRAME_SIZE];
+     uint16_t AnswerSize;
+ 
+-    /* Open connection to NXPNCI */
+-    tml_Connect ();
+-
+-    /* Loop until NXPNCI answers */
+-    while(NxpNci_CheckDevPres() != NXPNCI_SUCCESS)
++    for (i = 0; i < 3U; i++)
+     {
+-        if(i-- == 0) return NXPNCI_ERROR;
+-        Sleep(500);
+-    }
++        /* Open connection to NXPNCI and force a hardware reset on every attempt. */
++        tml_Connect();
+ 
+-	NxpNci_HostTransceive(NCICoreInit_2_0, sizeof(NCICoreInit_2_0), Answer, sizeof(Answer), &AnswerSize);
+-	if ((Answer[0] != 0x40) || (Answer[1] != 0x01) || (Answer[3] != 0x00)) return NXPNCI_ERROR;
++        if (NxpNci_CheckDevPres() == NXPNCI_SUCCESS)
++        {
++            if ((NxpNci_HostTransceive(NCICoreInit_2_0, sizeof(NCICoreInit_2_0), Answer, sizeof(Answer), &AnswerSize) == NXPNCI_SUCCESS) &&
++                (Answer[0] == 0x40) && (Answer[1] == 0x01) && (Answer[3] == 0x00))
++            {
++                return NXPNCI_SUCCESS;
++            }
++        }
+ 
+-    return NXPNCI_SUCCESS;
+-}
++        tml_Disconnect();
++        Sleep(200);
++    }
+ 
++    return NXPNCI_ERROR;
++}
++/*
++ * NxpNci_GetFwVersion
++ * Usage: Copy the NFC Controller firmware version (3 bytes) captured during
++ * connection into the caller-provided fw array.
++ */
+ void NxpNci_GetFwVersion(unsigned char fw[3])
+ {
+     fw[0] = gNfcController_fw_version[0];
+@@ -634,6 +756,11 @@ void NxpNci_GetFwVersion(unsigned char fw[3])
+     fw[2] = gNfcController_fw_version[2];
+ }
+ 
++/*
++ * NxpNci_Disconnect
++ * Usage: Close the transport connection to the NFC Controller. Always returns
++ * NXPNCI_SUCCESS.
++ */
+ bool NxpNci_Disconnect(void)
+ {
+     /* Close connection to NXPNCI */
+@@ -642,6 +769,14 @@ bool NxpNci_Disconnect(void)
+     return NXPNCI_SUCCESS;
+ }
+ 
++/*
++ * NxpNci_ConfigureSettings
++ * Usage: Apply the NFC Controller configuration defined in Nfc_settings.h
++ * (standby, core, clock, TVDD and RF settings). Non-versatile settings are only
++ * re-applied when the stored build timestamp differs or after an anti-tearing
++ * recovery. A CORE_RESET/CORE_INIT is performed if any setting change requires
++ * it. Returns NXPNCI_SUCCESS on success, NXPNCI_ERROR on any command failure.
++ */
+ bool NxpNci_ConfigureSettings(void)
+ {
+     uint8_t Answer[MAX_NCI_FRAME_SIZE];
+@@ -744,6 +879,13 @@ bool NxpNci_ConfigureSettings(void)
+     return NXPNCI_SUCCESS;
+ }
+ 
++/*
++ * NxpNci_ConfigureMode
++ * Usage: Configure the NFC Controller discovery map, routing and NFC-A SEL_RSP
++ * for the requested operating mode(s) (reader/writer, card emulation and/or
++ * P2P). LLCP support is enabled when P2P is requested. Returns NXPNCI_SUCCESS on
++ * success, NXPNCI_ERROR on any command failure.
++ */
+ bool NxpNci_ConfigureMode(unsigned char mode)
+ {
+     uint8_t Command[MAX_NCI_FRAME_SIZE];
+@@ -775,7 +917,7 @@ bool NxpNci_ConfigureMode(unsigned char mode)
+     if(mode == 0) return NXPNCI_SUCCESS;
+ 
+ #ifndef REMOVE_RW_SUPPORT
+-    /* Enable Proprietary interface for T4T card presence check procedure */
++    /* Enable vendor-specific interface for T4T card presence check procedure */
+     if (mode == NXPNCI_MODE_RW)
+     {
+         NxpNci_HostTransceive(NCIPropAct, sizeof(NCIPropAct), Answer, sizeof(Answer), &AnswerSize);
+@@ -877,6 +1019,12 @@ bool NxpNci_ConfigureMode(unsigned char mode)
+     return NXPNCI_SUCCESS;
+ }
+ 
++/*
++ * NxpNci_ConfigureParams
++ * Usage: Send a raw CORE_SET_CONFIG command (pCmd/CmdSize) to the NFC Controller
++ * and validate the response. Lets the application push custom configuration.
++ * Returns NXPNCI_SUCCESS on success, NXPNCI_ERROR otherwise.
++ */
+ bool NxpNci_ConfigureParams(unsigned char *pCmd, unsigned short CmdSize)
+ {
+     uint8_t Answer[MAX_NCI_FRAME_SIZE];
+@@ -888,6 +1036,13 @@ bool NxpNci_ConfigureParams(unsigned char *pCmd, unsigned short CmdSize)
+     return NXPNCI_SUCCESS;
+ }
+ 
++/*
++ * NxpNci_StartDiscovery
++ * Usage: Build and send the RF_DISCOVER command from the list of technologies
++ * in pTechTab/TechTabSize to start the NFC Controller discovery loop. The
++ * command is also cached for later discovery restarts. Returns NXPNCI_SUCCESS
++ * on success, NXPNCI_ERROR otherwise.
++ */
+ bool NxpNci_StartDiscovery(unsigned char *pTechTab, unsigned char TechTabSize)
+ {
+     uint8_t Answer[MAX_NCI_FRAME_SIZE];
+@@ -911,6 +1066,11 @@ bool NxpNci_StartDiscovery(unsigned char *pTechTab, unsigned char TechTabSize)
+     return NXPNCI_SUCCESS;
+ }
+ 
++/*
++ * NxpNci_StopDiscovery
++ * Usage: Send the RF_DEACTIVATE command to stop the NFC Controller discovery
++ * loop and consume the resulting notification. Always returns NXPNCI_SUCCESS.
++ */
+ bool NxpNci_StopDiscovery(void)
+ {
+     uint8_t NCIStopDiscovery[] = {0x21, 0x06, 0x01, 0x00};
+@@ -923,6 +1083,14 @@ bool NxpNci_StopDiscovery(void)
+     return NXPNCI_SUCCESS;
+ }
+ 
++/*
++ * NxpNci_WaitForDiscoveryNotification
++ * Usage: Block until the NFC Controller reports a discovered/activated remote
++ * device and fill pRfIntf with its interface, protocol, mode/tech and parsed
++ * info. Handles the RF_INTF_ACTIVATED_NTF and RF_DISCOVER_NTF cases (selecting
++ * the first of multiple tags), and the special P2P device also presenting T4T
++ * emulation. Returns NXPNCI_SUCCESS on a valid detection, NXPNCI_ERROR on error.
++ */
+ bool NxpNci_WaitForDiscoveryNotification(NxpNci_RfIntf_t *pRfIntf)
+ {
+     uint8_t NCIRfDiscoverSelect[] = {0x21, 0x04, 0x03, 0x01, PROT_ISODEP, INTF_ISODEP};
+@@ -986,7 +1154,7 @@ wait:
+                     if (AnswerSize != 0)
+                     {
+                         /* Flush any other notification  */
+-                        while(Answer != 0) NxpNci_WaitForReception(Answer, sizeof(Answer), &AnswerSize, TIMEOUT_100MS);
++                        do NxpNci_WaitForReception(Answer, sizeof(Answer), &AnswerSize, TIMEOUT_100MS); while (AnswerSize != 0);
+                         /* Restart the discovery loop */ 
+                         NxpNci_HostTransceive(NCIRestartDiscovery, sizeof(NCIRestartDiscovery), Answer, sizeof(Answer), &AnswerSize);
+                         NxpNci_WaitForReception(Answer, sizeof(Answer), &AnswerSize, TIMEOUT_100MS);
+@@ -1051,6 +1219,12 @@ wait:
+ }
+ 
+ #ifndef REMOVE_FACTORYTEST_SUPPORT
++/*
++ * NxpNci_FactoryTest_Prbs
++ * Usage: Start the factory-test PRBS (Pseudo Random Bit Sequence) RF output for
++ * the given technology type and bitrate. Used for RF/antenna conformance and
++ * production testing. Returns NXPNCI_SUCCESS on success, NXPNCI_ERROR otherwise.
++ */
+ bool NxpNci_FactoryTest_Prbs(NxpNci_TechType_t type, NxpNci_Bitrate_t bitrate)
+ {
+ 	uint8_t NCIPrbs[] = {0x2F, 0x30, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01};
+@@ -1066,6 +1240,12 @@ bool NxpNci_FactoryTest_Prbs(NxpNci_TechType_t type, NxpNci_Bitrate_t bitrate)
+     return NXPNCI_SUCCESS;
+ }
+ 
++/*
++ * NxpNci_FactoryTest_RfOn
++ * Usage: Turn the RF field on for factory testing (unmodulated carrier). Used
++ * for RF/antenna measurements in production. Returns NXPNCI_SUCCESS on success,
++ * NXPNCI_ERROR otherwise.
++ */
+ bool NxpNci_FactoryTest_RfOn(void)
+ {
+ 	uint8_t NCIRfOn[] = {0x2F, 0x3D, 0x02, 0x20, 0x01};
+diff --git b/applications/TML/tml.c a/applications/TML/tml.c
+index 6d5b4b9..c0154ce 100644
+--- b/applications/TML/tml.c
++++ a/applications/TML/tml.c
+@@ -13,181 +13,187 @@
+ */
+ 
+ #include <stdint.h>
++#include <string.h>
+ #include "board.h"
+ #include "fsl_gpio.h"
++#include "fsl_i2c.h"
++#include "fsl_port.h"
+ #include <tool.h>
+ 
+ typedef enum {ERROR = 0, SUCCESS = !ERROR} Status;
+ 
+-#ifdef BOARD_NXPNCI_INTERFACE_I2C
+-#include "fsl_i2c.h"
+-i2c_master_transfer_t masterXfer = {0};
++#ifndef BOARD_NXPNCI_INTERFACE_I2C
++#error "PN7160 port currently supports BOARD_NXPNCI_INTERFACE_I2C only."
++#endif
+ 
++/* Reused blocking transfer descriptor; PN7160 NCI frames do not use an I2C register subaddress. */
++static i2c_master_transfer_t masterXfer = {0};
++
++/* Initialize the I2C master peripheral and the shared PN7160 transfer descriptor. */
+ static void INTF_INIT(void)
+ {
+-	i2c_master_config_t masterConfig;
++    i2c_master_config_t masterConfig;
++
+     I2C_MasterGetDefaultConfig(&masterConfig);
+     masterConfig.baudRate_Bps = BOARD_NXPNCI_I2C_BAUDRATE;
++
+     I2C_MasterInit(BOARD_NXPNCI_I2C_INSTANCE, &masterConfig, BOARD_NXPNCI_I2C_CLOCK_FREQ);
+-    masterXfer.slaveAddress = BOARD_NXPNCI_I2C_ADDR;
+-    masterXfer.subaddress = 0;
++
++    /* Initialize the common transfer fields once; read/write calls only change direction and buffer. */
++    memset(&masterXfer, 0, sizeof(masterXfer));
++    masterXfer.slaveAddress   = BOARD_NXPNCI_I2C_ADDR;
++    masterXfer.subaddress     = 0;
+     masterXfer.subaddressSize = 0;
+-    masterXfer.flags = kI2C_TransferDefaultFlag;
++    masterXfer.flags          = kI2C_TransferDefaultFlag;
+ }
+ 
++/* Send one raw NCI frame buffer to PN7160 over I2C. */
+ static status_t INTF_WRITE(uint8_t *pBuff, uint16_t buffLen)
+ {
+     masterXfer.direction = kI2C_Write;
+-    masterXfer.data = pBuff;
+-    masterXfer.dataSize = buffLen;
++    masterXfer.data      = pBuff;
++    masterXfer.dataSize  = buffLen;
+     return I2C_MasterTransferBlocking(BOARD_NXPNCI_I2C_INSTANCE, &masterXfer);
+ }
+ 
++/* Read raw bytes from PN7160 over I2C into the caller-provided buffer. */
+ static status_t INTF_READ(uint8_t *pBuff, uint16_t buffLen)
+ {
+     masterXfer.direction = kI2C_Read;
+-    masterXfer.data = pBuff;
+-    masterXfer.dataSize = buffLen;
++    masterXfer.data      = pBuff;
++    masterXfer.dataSize  = buffLen;
+     return I2C_MasterTransferBlocking(BOARD_NXPNCI_I2C_INSTANCE, &masterXfer);
+ }
+-#else // BOARD_NXPNCI_INTERFACE_SPI
+-#include "fsl_spi.h"
+-spi_transfer_t masterXfer;
+-
+-static void INTF_INIT(void)
+-{
+-	spi_master_config_t masterConfig;
+-    SPI_MasterGetDefaultConfig(&masterConfig);
+-    masterConfig.baudRate_Bps = BOARD_NXPNCI_SPI_BAUDRATE;
+-    masterConfig.sselNumber = BOARD_NXPNCI_SPI_SSEL;
+-    masterConfig.sselPolarity = kSPI_SpolActiveAllLow;
+-    masterConfig.delayConfig.frameDelay = 0x1U;
+-    SPI_MasterInit(BOARD_NXPNCI_SPI_INSTANCE, &masterConfig, BOARD_NXPNCI_SPI_CLOCK);
+-}
+-
+-static status_t INTF_WRITE(uint8_t *pBuff, uint16_t buffLen)
+-{
+-	uint8_t temp[257];
+-	temp[0] = 0x7F;
+-	memcpy(temp+1, pBuff, buffLen);
+-    masterXfer.txData   = temp;
+-    masterXfer.rxData   = NULL;
+-    masterXfer.dataSize = buffLen+1;
+-    masterXfer.configFlags = kSPI_EndOfTransfer | kSPI_ReceiveIgnore;
+-    return SPI_MasterTransferBlocking(BOARD_NXPNCI_SPI_INSTANCE, &masterXfer);
+-}
+ 
+-static status_t INTF_READ(uint8_t *pBuff, uint16_t buffLen)
++/* Configure PN7160 control pins and prepare the transport interface. */
++static Status tml_Init(void)
+ {
+-	status_t status;
+-	uint8_t temp[257];
+-	temp[0] = 0xFF;
+-	masterXfer.txData   = temp;
+-    masterXfer.rxData   = temp;
+-    masterXfer.dataSize = buffLen+1;
+-    masterXfer.configFlags = kSPI_EndOfTransfer;
+-    status = SPI_MasterTransferBlocking(BOARD_NXPNCI_SPI_INSTANCE, &masterXfer);
+-    if(status == kStatus_Success) memcpy(pBuff, temp+1, buffLen);
+-    SDK_DelayAtLeastUs(10, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY);
+-    return status;
+-}
+-#endif
++    gpio_pin_config_t irq_config = {kGPIO_DigitalInput, 0};
++    gpio_pin_config_t out_low_config = {kGPIO_DigitalOutput, 0};
+ 
+-static Status tml_Init(void) {
+-	gpio_pin_config_t in_config = {kGPIO_DigitalInput, 0};
+-	gpio_pin_config_t out_config = {kGPIO_DigitalOutput, 0};
++    GPIO_PinInit(BOARD_NXPNCI_IRQ_GPIO, BOARD_NXPNCI_IRQ_PIN, &irq_config);
++    GPIO_PinInit(BOARD_NXPNCI_VEN_GPIO, BOARD_NXPNCI_VEN_PIN, &out_low_config);
++    GPIO_PinInit(BOARD_NXPNCI_REQ_GPIO, BOARD_NXPNCI_REQ_PIN, &out_low_config);
+ 
+-    GPIO_PortInit(GPIO, BOARD_NXPNCI_GPIO_PORT);
+-    GPIO_PinInit(GPIO, BOARD_NXPNCI_IRQ_PORT, BOARD_NXPNCI_IRQ_PIN, &in_config);
+-    GPIO_PinInit(GPIO, BOARD_NXPNCI_VEN_PORT, BOARD_NXPNCI_VEN_PIN, &out_config);
+-    GPIO_PinInit(GPIO, BOARD_NXPNCI_DWL_PORT, BOARD_NXPNCI_DWL_PIN, &out_config);
++    /* Hold REQ/DWL low so PN7160 boots normal NCI firmware instead of download mode. */
++    GPIO_PinWrite(BOARD_NXPNCI_REQ_GPIO, BOARD_NXPNCI_REQ_PIN, 0U);
++    GPIO_PinWrite(BOARD_NXPNCI_VEN_GPIO, BOARD_NXPNCI_VEN_PIN, 0U);
+ 
+     INTF_INIT();
+ 
+     return SUCCESS;
+ }
+ 
+-static Status tml_DeInit(void) {
+-    GPIO_PinWrite(GPIO, BOARD_NXPNCI_VEN_PORT, BOARD_NXPNCI_VEN_PIN, 0);
++/* Put PN7160 control pins into the inactive low state. */
++static Status tml_DeInit(void)
++{
++    GPIO_PinWrite(BOARD_NXPNCI_VEN_GPIO, BOARD_NXPNCI_VEN_PIN, 0U);
++    GPIO_PinWrite(BOARD_NXPNCI_REQ_GPIO, BOARD_NXPNCI_REQ_PIN, 0U);
+     return SUCCESS;
+ }
+ 
+-static Status tml_Reset(void) {
+-    GPIO_PinWrite(GPIO, BOARD_NXPNCI_VEN_PORT, BOARD_NXPNCI_VEN_PIN, 0);
+-	Sleep(10);
+-    GPIO_PinWrite(GPIO, BOARD_NXPNCI_VEN_PORT, BOARD_NXPNCI_VEN_PIN, 1);
+-	Sleep(10);
+-	return SUCCESS;
++/* Toggle PN7160 VEN to perform the startup hardware reset sequence. */
++static Status tml_Reset(void)
++{
++    /* Hardware reset sequence required before the first NCI command after power-up. */
++    GPIO_PinWrite(BOARD_NXPNCI_REQ_GPIO, BOARD_NXPNCI_REQ_PIN, 0U);
++    GPIO_PinWrite(BOARD_NXPNCI_VEN_GPIO, BOARD_NXPNCI_VEN_PIN, 0U);
++    Sleep(20);
++    GPIO_PinWrite(BOARD_NXPNCI_VEN_GPIO, BOARD_NXPNCI_VEN_PIN, 1U);
++    Sleep(100);
++    return SUCCESS;
+ }
+ 
+-static Status tml_Tx(uint8_t *pBuff, uint16_t buffLen) {
++/* Transmit an NCI frame, retrying once if PN7160 NACKs the first I2C write. */
++static Status tml_Tx(uint8_t *pBuff, uint16_t buffLen)
++{
++    /* PN7160 can briefly NACK while waking or completing reset; retry once after a short delay. */
+     if (INTF_WRITE(pBuff, buffLen) != kStatus_Success)
+     {
+-    	Sleep(10);
+-    	if(INTF_WRITE(pBuff, buffLen) != kStatus_Success)
+-    	{
+-    		return ERROR;
+-    	}
++        Sleep(10);
++        if (INTF_WRITE(pBuff, buffLen) != kStatus_Success)
++        {
++            return ERROR;
++        }
+     }
+ 
+-	return SUCCESS;
++    return SUCCESS;
+ }
+ 
+-static Status tml_Rx(uint8_t *pBuff, uint16_t buffLen, uint16_t *pBytesRead) {
+-    if(INTF_READ(pBuff, 3) == kStatus_Success)
++/* Receive one complete NCI frame by reading the header first, then the payload. */
++static Status tml_Rx(uint8_t *pBuff, uint16_t buffLen, uint16_t *pBytesRead)
++{
++    /* NCI over I2C starts with a 3-byte packet header; byte 2 is the payload length. */
++    if (INTF_READ(pBuff, 3) == kStatus_Success)
+     {
+-    	if ((pBuff[2] + 3) <= buffLen)
+-    	{
+-			if (pBuff[2] > 0)
+-			{
+-				if(INTF_READ(&pBuff[3], pBuff[2]) == kStatus_Success)
+-				{
+-					*pBytesRead = pBuff[2] + 3;
+-				}
+-				else return ERROR;
+-			} else
+-			{
+-				*pBytesRead = 3;
+-			}
+-    	}
+-		else return ERROR;
+-   }
++        if ((pBuff[2] + 3) <= buffLen)
++        {
++            if (pBuff[2] > 0)
++            {
++                if (INTF_READ(&pBuff[3], pBuff[2]) == kStatus_Success)
++                {
++                    *pBytesRead = pBuff[2] + 3;
++                }
++                else return ERROR;
++            }
++            else
++            {
++                *pBytesRead = 3;
++            }
++        }
++        else return ERROR;
++    }
+     else return ERROR;
+ 
+-	return SUCCESS;
+-}
+-
+-static Status tml_WaitForRx(uint32_t timeout) {
+-	if (timeout == 0) {
+-		while ((GPIO_PinRead(GPIO, BOARD_NXPNCI_IRQ_PORT, BOARD_NXPNCI_IRQ_PIN) == 0));
+-	} else {
+-		int16_t to = timeout;
+-		while ((GPIO_PinRead(GPIO, BOARD_NXPNCI_IRQ_PORT, BOARD_NXPNCI_IRQ_PIN) == 0)) {
+-			Sleep(10);
+-			to -= 10;
+-			if (to <= 0) return ERROR;
+-		}
+-	}
+-	return SUCCESS;
++    return SUCCESS;
+ }
+ 
+-void tml_Connect(void) {
+-	tml_Init();
+-	tml_Reset();
++/* Wait until PN7160 asserts IRQ to indicate that a response frame is ready. */
++static Status tml_WaitForRx(uint32_t timeout)
++{
++    /* IRQ goes high when PN7160 has data ready; timeout 0 means wait forever. */
++    if (timeout == 0)
++    {
++        while (GPIO_PinRead(BOARD_NXPNCI_IRQ_GPIO, BOARD_NXPNCI_IRQ_PIN) == 0U)
++        {
++        }
++    }
++    else
++    {
++        int32_t to = (int32_t)timeout;
++        while (GPIO_PinRead(BOARD_NXPNCI_IRQ_GPIO, BOARD_NXPNCI_IRQ_PIN) == 0U)
++        {
++            Sleep(10);
++            to -= 10;
++            if (to <= 0) return ERROR;
++        }
++    }
++    return SUCCESS;
+ }
+ 
+-void tml_Disconnect(void) {
+-	tml_DeInit();
++/* Bring up the transport layer and reset PN7160 into normal NCI operation. */
++void tml_Connect(void)
++{
++    tml_Init();
++    tml_Reset();
+ }
+ 
+-void tml_Send(uint8_t *pBuffer, uint16_t BufferLen, uint16_t *pBytesSent) {
+-	if(tml_Tx(pBuffer, BufferLen) == ERROR) *pBytesSent = 0;
+-	else *pBytesSent = BufferLen;
++/* Shut down the transport layer and deassert PN7160 control pins. */
++void tml_Disconnect(void)
++{
++    tml_DeInit();
+ }
+ 
+-void tml_Receive(uint8_t *pBuffer, uint16_t BufferLen, uint16_t *pBytes, uint16_t timeout) {
+-	if (tml_WaitForRx(timeout) == ERROR) *pBytes = 0;
+-	else tml_Rx(pBuffer, BufferLen, pBytes);
++/* Send an NCI frame and report the number of bytes accepted by the transport. */
++void tml_Send(uint8_t *pBuffer, uint16_t BufferLen, uint16_t *pBytesSent)
++{
++    if (tml_Tx(pBuffer, BufferLen) == ERROR) *pBytesSent = 0;
++    else *pBytesSent = BufferLen;
+ }
+ 
+-
++/* Wait for and receive one NCI frame, returning zero bytes on timeout or transport error. */
++void tml_Receive(uint8_t *pBuffer, uint16_t BufferLen, uint16_t *pBytes, uint16_t timeout)
++{
++    if (tml_WaitForRx(timeout) == ERROR) *pBytes = 0;
++    else tml_Rx(pBuffer, BufferLen, pBytes);
++}
+\ No newline at end of file
+diff --git b/applications/main.c a/applications/main.c
+index 1e5443e..e325665 100644
+--- b/applications/main.c
++++ a/applications/main.c
+@@ -1,46 +1,176 @@
+ /*
+-*         Copyright (c), NXP Semiconductors Caen / France
+-*
+-*                     (C)NXP Semiconductors
+-*       All rights are reserved. Reproduction in whole or in part is
+-*      prohibited without the written consent of the copyright owner.
+-*  NXP reserves the right to make changes without notice at any time.
+-* NXP makes no warranty, expressed, implied or statutory, including but
+-* not limited to any implied warranty of merchantability or fitness for any
+-*particular purpose, or that the use will not infringe any third party patent,
+-* copyright or trademark. NXP must not be liable for any loss or damage
+-*                          arising from its use.
+-*/
+-
+-#include <stdio.h>
++ * Copyright 2026 NXP
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
+ #include <string.h>
+-#include "pin_mux.h"
++
+ #include "board.h"
++#include "app.h"
+ #include "fsl_debug_console.h"
++#include "tool.h"
++
++extern void nfc_example_rwandce(void);
++extern void nfc_example_rw(void);
++extern void nfc_example_p2p(void);
++
++typedef enum _app_task
++{
++    kAppTask_RWandCE,
++    kAppTask_RW,
++    kAppTask_P2P,
++} app_task_t;
++
++/* Normalize a single ASCII character so console command matching is case-insensitive. */
++static char APP_ToLower(char ch)
++{
++    if ((ch >= 'A') && (ch <= 'Z'))
++    {
++        ch = (char)(ch - 'A' + 'a');
++    }
++
++    return ch;
++}
++
++/* Block until one character is received from the debug console. */
++static int APP_WaitConsoleChar(void)
++{
++    int ch;
++
++    do
++    {
++        ch = GETCHAR();
++        if (ch < 0)
++        {
++            Sleep(10);
++        }
++    } while (ch < 0);
++
++    return ch;
++}
++
++/* Read one printable command line from the console and echo the normalized characters. */
++static void APP_ReadCommand(char *buffer, size_t bufferSize)
++{
++    size_t length = 0;
++
++    while (true)
++    {
++        int ch = APP_WaitConsoleChar();
++
++        if ((ch == '\r') || (ch == '\n'))
++        {
++            if (length == 0U)
++            {
++                continue;
++            }
+ 
+-extern void nfc_example (void);
++            buffer[length] = '\0';
++            PRINTF("\r\n");
++            return;
++        }
+ 
+-int main(void) {
+-    /* Enable clock of uart0. */
+-    CLOCK_EnableClock(kCLOCK_Uart0);
+-    /* Ser DIV of uart0. */
+-    CLOCK_SetClkDivider(kCLOCK_DivUsartClk, 1U);
+-    /* Enable clock of i2c0. */
+-    CLOCK_EnableClock(kCLOCK_I2c0);
+-    /* Enable clock of spi0. */
+-    CLOCK_EnableClock(kCLOCK_Spi0);
++        if ((ch == '\b') || (ch == 0x7F))
++        {
++            if (length > 0U)
++            {
++                length--;
++                PRINTF("\b \b");
++            }
++            continue;
++        }
+ 
+-    BOARD_InitPins();
+-    BOARD_BootClockIRC12M();
+-    BOARD_InitDebugConsole();
++        if ((ch >= ' ') && (ch <= '~') && (length < (bufferSize - 1U)))
++        {
++            char normalized = APP_ToLower((char)ch);
++            buffer[length] = normalized;
++            length++;
++            PUTCHAR(normalized);
++        }
++    }
++}
++
++/* Compare a received command against one accepted selector token. */
++static bool APP_CommandEquals(const char *command, const char *expected)
++{
++    return strcmp(command, expected) == 0;
++}
++
++/* Prompt until the user selects one of the supported NFC application modes. */
++static app_task_t APP_SelectTask(void)
++{
++    char command[16];
++
++    while (true)
++    {
++        PRINTF("\r\nSelect NFC application task:\r\n");
++        PRINTF("  1 / rwandce - Reader/Writer + Card Emulation mode\r\n");
++        PRINTF("  2 / rw      - Reader/Writer mode\r\n");
++        PRINTF("  3 / p2p     - P2P mode\r\n");
++        PRINTF("> ");
++
++        APP_ReadCommand(command, sizeof(command));
++
++        if (APP_CommandEquals(command, "1") || APP_CommandEquals(command, "rwandce") ||
++            APP_CommandEquals(command, "rwce"))
++        {
++            return kAppTask_RWandCE;
++        }
+ 
+-	PRINTF("\nRunning the NXP-NCI2.0 example.\n");
++        if (APP_CommandEquals(command, "2") || APP_CommandEquals(command, "rw"))
++        {
++            return kAppTask_RW;
++        }
+ 
+-	nfc_example();
++        if (APP_CommandEquals(command, "3") || APP_CommandEquals(command, "p2p"))
++        {
++            return kAppTask_P2P;
++        }
+ 
+-	return 0;
++        PRINTF("Unknown command: %s\r\n", command);
++    }
+ }
+ 
+-////////////////////////////////////////////////////////////////////////////////
+-// EOF
+-////////////////////////////////////////////////////////////////////////////////
++/* Initialize the board, select the NFC demo at runtime, and dispatch to the chosen task. */
++int main(void)
++{
++    app_task_t selectedTask;
++
++    /* Bring up clocks, pins, I2C, and the debug UART before using the console selector. */
++    BOARD_InitHardware();
++
++    PRINTF("MCUX SDK version: %s\r\n", MCUXSDK_VERSION_FULL_STR);
++    PRINTF("\r\nRunning the NXP-NCI2.0 application selector for PN7160.\r\n");
++
++    /* Block here until the user chooses which NFC demo should own the PN7160 session. */
++    selectedTask = APP_SelectTask();
++
++    /* Each selected demo initializes PN7160 for its own mode and then enters its discovery loop. */
++    switch (selectedTask)
++    {
++        case kAppTask_RWandCE:
++            PRINTF("\r\nStarting Reader/Writer + Card Emulation mode.\r\n");
++            nfc_example_rwandce();
++            break;
++
++        case kAppTask_RW:
++            PRINTF("\r\nStarting Reader/Writer mode.\r\n");
++            nfc_example_rw();
++            break;
++
++        case kAppTask_P2P:
++        default:
++            PRINTF("\r\nStarting P2P mode.\r\n");
++            nfc_example_p2p();
++            break;
++    }
++
++    /* Demo functions normally do not return. Stay here if initialization failed and a demo exits. */
++    while (1)
++    {
++    }
++}
+\ No newline at end of file
+diff --git b/applications/ndef_helper.c a/applications/ndef_helper.c
+index 37290dc..7e12580 100644
+--- b/applications/ndef_helper.c
++++ a/applications/ndef_helper.c
+@@ -17,6 +17,7 @@
+ #include <string.h>
+ #include <ndef_helper.h>
+ 
++/* Convert a Wi-Fi WPS authentication type value into printable text. */
+ const char* ndef_helper_WifiAuth(unsigned char auth)
+ {
+     switch (auth)
+@@ -31,6 +32,7 @@ const char* ndef_helper_WifiAuth(unsigned char auth)
+     }
+ }
+ 
++/* Convert a Wi-Fi WPS encryption type value into printable text. */
+ const char* ndef_helper_WifiEnc(unsigned char enc)
+ {
+     switch (enc)
+@@ -44,6 +46,7 @@ const char* ndef_helper_WifiEnc(unsigned char enc)
+     }
+ }
+ 
++/* Return the URI prefix represented by an NDEF well-known URI identifier code. */
+ const char* ndef_helper_UriHead(unsigned char head)
+ {
+     switch (head) {
+@@ -58,6 +61,7 @@ const char* ndef_helper_UriHead(unsigned char head)
+     }
+ }
+ 
++/* Inspect an NDEF record header and classify the record type and payload location. */
+ NdefRecord_t DetectNdefRecordType(unsigned char *pNdefRecord)
+ {
+     NdefRecord_t record;
+@@ -174,6 +178,7 @@ NdefRecord_t DetectNdefRecordType(unsigned char *pNdefRecord)
+     return record;
+ }
+ 
++/* Return the next NDEF record in a message, or NULL when the current record is the last one. */
+ unsigned char* GetNextRecord(unsigned char *pNdefRecord)
+ {
+     unsigned char *temp = NULL;
+diff --git b/applications/nfc_example_P2P.c a/applications/nfc_example_P2P.c
+index 4175783..efab9f9 100644
+--- b/applications/nfc_example_P2P.c
++++ a/applications/nfc_example_P2P.c
+@@ -20,7 +20,7 @@
+ #include <ndef_helper.h>
+ 
+ /* Discovery loop configuration according to the targeted modes of operation */
+-unsigned char DiscoveryTechnologies[] = {
++static unsigned char DiscoveryTechnologies[] = {
+     MODE_POLL | TECH_PASSIVE_NFCA,
+     MODE_POLL | TECH_PASSIVE_NFCF,
+     MODE_POLL | TECH_ACTIVE_NFC,
+@@ -32,7 +32,8 @@ unsigned char DiscoveryTechnologies[] = {
+ static unsigned char gNdefBuffer[100];
+ static unsigned short gPendingNdefMsgReception = 0;
+ 
+-void NdefPull_Cb(unsigned char *pNdefMessage, unsigned short ReceivedSize, unsigned int NdefMessageSize)
++/* Assemble and decode an NDEF message received from a P2P peer. */
++static void NdefPull_Cb(unsigned char *pNdefMessage, unsigned short ReceivedSize, unsigned int NdefMessageSize)
+ {
+     unsigned char *pNdefRecord = pNdefMessage;
+     NdefRecord_t NdefRecord;
+@@ -158,7 +159,7 @@ void NdefPull_Cb(unsigned char *pNdefMessage, unsigned short ReceivedSize, unsig
+     PRINTF("\n");
+ }
+ 
+-const char NDEF_MESSAGE[14] = {
++static const char NDEF_MESSAGE[14] = {
+     0xC1,   				// MB/ME/CF/1/IL/TNF
+     0x01,   				// TYPE LENGTH
+     0x07 >> 24,   			// PAYLOAD LENTGH MSB
+@@ -171,11 +172,13 @@ const char NDEF_MESSAGE[14] = {
+     'e', 'n', 				// Language length
+     'T', 'e', 's', 't' };
+ 
+-void NdefPush_Cb(unsigned char *pNdefRecord, unsigned short NdefRecordSize) {
++/* Report completion of an NDEF record push to the remote P2P peer. */
++static void NdefPush_Cb(unsigned char *pNdefRecord, unsigned short NdefRecordSize) {
+     PRINTF("--- NDEF Record sent\n\n");
+ }
+ 
+-void nfc_example(void)
++/* Run the PN7160 peer-to-peer demo and process SNEP NDEF exchange with discovered peers. */
++void nfc_example_p2p(void)
+ {
+     NxpNci_RfIntf_t RfInterface;
+ 
+diff --git b/applications/nfc_example_RW.c a/applications/nfc_example_RW.c
+index 662f410..6cb9593 100644
+--- b/applications/nfc_example_RW.c
++++ a/applications/nfc_example_RW.c
+@@ -19,13 +19,14 @@
+ #include <Nfc.h>
+ 
+ /* Discovery loop configuration according to the targeted modes of operation */
+-unsigned char DiscoveryTechnologies[] = {
++static unsigned char DiscoveryTechnologies[] = {
+     MODE_POLL | TECH_PASSIVE_NFCA,
+     MODE_POLL | TECH_PASSIVE_NFCB,
+     MODE_POLL | TECH_PASSIVE_15693
+ };
+ 
+-void PCD_MIFARE_scenario (void)
++/* Authenticate, read, write, and verify one MIFARE Classic block. */
++static void PCD_MIFARE_scenario (void)
+ {
+     #define BLK_NB_MFC      4
+     #define KEY_MFC         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
+@@ -85,7 +86,8 @@ void PCD_MIFARE_scenario (void)
+     PRINTF(" Read block %d:", Read[2]); PRINT_BUF(" ", (Resp+1), RespSize-2);
+ }
+ 
+-void PCD_ISO15693_scenario (void)
++/* Read, write, and verify one ISO15693 block through the reader interface. */
++static void PCD_ISO15693_scenario (void)
+ {
+     #define BLK_NB_ISO15693     8
+     #define DATA_WRITE_ISO15693 0x11, 0x22, 0x33, 0x44
+@@ -123,7 +125,8 @@ void PCD_ISO15693_scenario (void)
+     PRINTF(" Read block %d:", ReadBlock[2]); PRINT_BUF(" ", (Resp+1), RespSize-2);
+ }
+ 
+-void PCD_ISO14443_3A_scenario (void)
++/* Read, write, and verify one Type 2 Tag block using ISO14443-3A commands. */
++static void PCD_ISO14443_3A_scenario (void)
+ {
+     #define BLK_NB_ISO14443_3A      5
+     #define DATA_WRITE_ISO14443_3A  0x11, 0x22, 0x33, 0x44
+@@ -163,7 +166,8 @@ void PCD_ISO14443_3A_scenario (void)
+     PRINTF(" Read block %d:", Read[1]); PRINT_BUF(" ", Resp, 4);
+ }
+ 
+-void PCD_ISO14443_4_scenario (void)
++/* Select the PPSE application on an ISO-DEP card to confirm ISO14443-4 exchange. */
++static void PCD_ISO14443_4_scenario (void)
+ {
+     bool status;
+     unsigned char Resp[256];
+@@ -179,7 +183,8 @@ void PCD_ISO14443_4_scenario (void)
+     PRINTF(" Select PPSE Application succeed\n");
+ }
+ 
+-void displayCardInfo(NxpNci_RfIntf_t RfIntf)
++/* Print protocol and technology-specific activation details for the detected card. */
++static void displayCardInfo(NxpNci_RfIntf_t RfIntf)
+ {
+     switch(RfIntf.Protocol){
+     case PROT_T1T:
+@@ -226,7 +231,8 @@ void displayCardInfo(NxpNci_RfIntf_t RfIntf)
+     }
+ }
+ 
+-void nfc_example(void)
++/* Run the PN7160 reader/writer demo and execute the scenario matching each detected tag. */
++void nfc_example_rw(void)
+ {
+     NxpNci_RfIntf_t RfInterface;
+ 
+diff --git b/applications/nfc_example_RWandCE.c a/applications/nfc_example_RWandCE.c
+index 41ba2b3..a7aaac6 100644
+--- b/applications/nfc_example_RWandCE.c
++++ a/applications/nfc_example_RWandCE.c
+@@ -19,8 +19,8 @@
+ /* Defining RW_NDEF_WRITING lead to NDEF message write operation just after NDEF read operation */
+ //#define RW_NDEF_WRITING
+ 
+-/* Discovery loop configuration according to the targeted modes of operation */
+-unsigned char DiscoveryTechnologies[] = {
++/* Polling technologies read external tags; listen technologies expose this board as a Type 4 Tag. */
++static unsigned char DiscoveryTechnologies[] = {
+     MODE_POLL | TECH_PASSIVE_NFCA,
+     MODE_POLL | TECH_PASSIVE_NFCF,
+     MODE_POLL | TECH_PASSIVE_NFCB,
+@@ -29,10 +29,12 @@ unsigned char DiscoveryTechnologies[] = {
+     MODE_LISTEN | TECH_PASSIVE_NFCB,
+ };
+ 
++/* Fragmented NDEF reads are assembled here before parsing individual records. */
+ static unsigned char gNdefBuffer[100];
+ static unsigned short gPendingNdefMsgReception = 0;
+ 
+-void NdefPull_Cb(unsigned char *pNdefMessage, unsigned short ReceivedSize, unsigned int NdefMessageSize)
++/* Assemble and decode an NDEF message read from a remote NFC tag. */
++static void NdefPull_Cb(unsigned char *pNdefMessage, unsigned short ReceivedSize, unsigned int NdefMessageSize)
+ {
+     unsigned char *pNdefRecord = pNdefMessage;
+     NdefRecord_t NdefRecord;
+@@ -46,6 +48,7 @@ void NdefPull_Cb(unsigned char *pNdefMessage, unsigned short ReceivedSize, unsig
+ 
+     if (gPendingNdefMsgReception)
+     {
++        /* Continue copying fragments at the offset where the previous callback stopped. */
+         memcpy(&gNdefBuffer[NdefMessageSize - gPendingNdefMsgReception], pNdefMessage, ReceivedSize);
+         gPendingNdefMsgReception -= ReceivedSize;
+         if (gPendingNdefMsgReception > 0)
+@@ -72,6 +75,7 @@ void NdefPull_Cb(unsigned char *pNdefMessage, unsigned short ReceivedSize, unsig
+         return;
+     }
+ 
++    /* The helper walks chained NDEF records until the message end flag is reached. */
+     while (pNdefRecord != NULL)
+     {
+         NdefRecord = DetectNdefRecordType(pNdefRecord);
+@@ -80,6 +84,7 @@ void NdefPull_Cb(unsigned char *pNdefMessage, unsigned short ReceivedSize, unsig
+         {
+         case MEDIA_VCARD:
+             {
++                /* Temporarily terminate the payload so PRINTF can treat it as a C string. */
+                 save = NdefRecord.recordPayload[NdefRecord.recordPayloadSize];
+                 NdefRecord.recordPayload[NdefRecord.recordPayloadSize] = '\0';
+                 PRINTF("   vCard:\n%s\n", NdefRecord.recordPayload);
+@@ -106,6 +111,7 @@ void NdefPull_Cb(unsigned char *pNdefMessage, unsigned short ReceivedSize, unsig
+             {
+                 unsigned char index = 0, i;
+ 
++                /* Wi-Fi handover payload is encoded as WPS TLV attributes. */
+                 PRINTF ("--- Received WIFI credentials:\n");
+                 if ((NdefRecord.recordPayload[index] == 0x10) && (NdefRecord.recordPayload[index+1] == 0x0e)) index+= 4;
+                 while(index < NdefRecord.recordPayloadSize)
+@@ -146,24 +152,27 @@ void NdefPull_Cb(unsigned char *pNdefMessage, unsigned short ReceivedSize, unsig
+     PRINTF("\n");
+ }
+ 
+-const char NDEF_MESSAGE[14] = {
+-    0xC1,   				// MB/ME/CF/1/IL/TNF
++/* Type 4 Tag emulation returns a single Text record with payload "Test". */
++static const char NDEF_MESSAGE[14] = {
++    0xC1,   				// MB/ME set, TNF = well-known
+     0x01,   				// TYPE LENGTH
+-    0x07 >> 24,   			// PAYLOAD LENTGH MSB
+-    0x07 >> 16,   			// PAYLOAD LENTGH
+-    0x07 >> 8,    			// PAYLOAD LENTGH
+-    0x07 & 0xFF,  			// PAYLOAD LENTGH LSB
++    0x07 >> 24,   			// PAYLOAD LENGTH MSB
++    0x07 >> 16,   			// PAYLOAD LENGTH
++    0x07 >> 8,    			// PAYLOAD LENGTH
++    0x07 & 0xFF,  			// PAYLOAD LENGTH LSB
+     'T',    				// TYPE
+ 							// PAYLOAD
+     0x02,  					// Language length
+     'e', 'n', 				// Language
+     'T', 'e', 's', 't' };
+ 
+-void NdefPush_Cb(unsigned char *pNdefRecord, unsigned short NdefRecordSize) {
++/* Report completion of an NDEF write to this board's emulated Type 4 Tag. */
++static void NdefPush_Cb(unsigned char *pNdefRecord, unsigned short NdefRecordSize) {
+     PRINTF("--- NDEF message written\n\n");
+ }
+ 
+-void displayCardInfo(NxpNci_RfIntf_t RfIntf)
++/* Print technology-specific activation data useful when checking antenna and tag behavior. */
++static void displayCardInfo(NxpNci_RfIntf_t RfIntf)
+ {
+     switch(RfIntf.Protocol){
+     case PROT_T1T:
+@@ -210,7 +219,8 @@ void displayCardInfo(NxpNci_RfIntf_t RfIntf)
+     }
+ }
+ 
+-void nfc_example(void)
++/* Run the combined reader/writer and card-emulation demo for PN7160. */
++void nfc_example_rwandce(void)
+ {
+     NxpNci_RfIntf_t RfInterface;
+ 
+@@ -231,6 +241,7 @@ void nfc_example(void)
+         return;
+     }
+ 
++    /* Enable both Reader/Writer polling and Type 4 Tag card-emulation listen mode. */
+     if (NxpNci_ConfigureMode(NXPNCI_MODE_RW | NXPNCI_MODE_CARDEMU) == NFC_ERROR)
+     {
+         PRINTF("Error: cannot configure NXPNCI\n");
+@@ -254,7 +265,7 @@ void nfc_example(void)
+         /* Wait until a peer is discovered */
+         while(NxpNci_WaitForDiscoveryNotification(&RfInterface) != NFC_SUCCESS);
+ 
+-        /* Is activated from remote T4T ? */
++        /* Listen mode: an external reader selects this board's emulated Type 4 Tag. */
+         if ((RfInterface.Interface == INTF_ISODEP) && ((RfInterface.ModeTech & MODE_MASK) == MODE_LISTEN))
+         {
+             PRINTF(" - LISTEN MODE: Activated from remote Reader\n");
+@@ -265,6 +276,7 @@ void nfc_example(void)
+         }
+         else if ((RfInterface.ModeTech & MODE_MASK) == MODE_POLL)
+         {
++            /* Poll mode: this board acts as the reader and processes each activated tag. */
+             while(1)
+             {
+                 if (RfInterface.Interface != INTF_NFCDEP)
+@@ -281,6 +293,7 @@ void nfc_example(void)
+ #endif // ifdef RW_NDEF_WRITING
+                 }
+ 				
++                /* Anticollision may report more than one tag; activate each in turn. */
+                 if(RfInterface.MoreTags) {
+ 					    if(NxpNci_ReaderActivateNext(&RfInterface) == NFC_ERROR) break;
+ 				}
+diff --git b/applications/tool/tool.c a/applications/tool/tool.c
+index e53d6d1..04efcd0 100644
+--- b/applications/tool/tool.c
++++ a/applications/tool/tool.c
+@@ -13,36 +13,27 @@
+ */
+ 
+ #include <stdint.h>
++#include "fsl_common.h"
+ #include <tool.h>
+ 
+-/* LOOP_REF and CLOCK_CALL_TIME must be adapted according to the CPU execution time */
+-#define LOOP_REF		1000
+-#define CLOCK_CALL_TIME 100
+-
++/* Busy-wait for the requested number of milliseconds using the SDK delay helper. */
+ void Sleep(unsigned int ms)
+ {
+-	int i;
+-#ifndef DEBUG_SEMIHOSTING
+-	for(i=0; i<(ms * LOOP_REF); i++) asm("nop");
+-# else
+-	if(ms <= CLOCK_CALL_TIME)
+-	{
+-		for(i=0; i<(ms * LOOP_REF); i++) asm("nop");
+-	}
+-	else
+-	{
+-		clock_t time = clock() + ((ms - CLOCK_CALL_TIME)/10);
+-		while (clock() <= time);
+-	}
+-#endif
++    while (ms > 0U)
++    {
++        uint32_t chunk = (ms > 100U) ? 100U : ms;
++        SDK_DelayAtLeastUs(chunk * 1000U, SystemCoreClock);
++        ms -= chunk;
++    }
+ }
+ 
++/* Print a short hexadecimal dump prefixed by the caller-provided label string. */
+ void PrintBuf(unsigned char *x, unsigned char *y, unsigned int z)
+ {
+-	char tmp[200];
+-	char* temp = tmp + strlen((char*) x);
+-	int loop;
+-	sprintf(tmp, (char*) x);
++    char tmp[200];
++    char* temp = tmp + strlen((char*) x);
++    int loop;
++    sprintf(tmp, (char*) x);
+     for(loop=0;loop<(z<30?z:30);loop++) sprintf(temp+(loop*3), "%.2x ", y[loop]);
+     if(loop==30) sprintf(temp+(loop*3), "...\n");
+     else sprintf(temp+(loop*3), "\n");
